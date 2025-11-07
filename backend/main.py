@@ -73,7 +73,7 @@ def ping():
 
 # --- run locally with uvicorn when this file is the entrypoint ---
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
 
 # --- pip install requirements for MacOS ---
 # do this once before running anything else
