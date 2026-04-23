@@ -1,0 +1,22 @@
+Analyze the following telecom customer service call and return a structured JSON object with the following fields:
+
+{
+  "classification": "Billing/Connectivity/Customer Service/General/Cancellation",
+  "reason": "Specific reason for the classification (e.g. Too Expensive)",
+  "core_issue": "Summary of the issue",
+  "satisfaction_score": 1-5 (1: Angry, 5: Satisfied),
+  "sentiment": "Positive/Neutral/Negative",
+  "churn_risk_score": 0-100,
+  "follow_up_needed": true/false,
+  "pii_detected": ["List", "of", "PII"],
+  "emotional_progression": [
+    {"stage": "Start", "emotion": "Angry"},
+    {"stage": "Middle", "emotion": "Neutral"},
+    {"stage": "End", "emotion": "Satisfied"}
+  ],
+  "next_best_offer": "Recommended offer",
+  "retention_tactic": "Recommended tactic",
+  "script_snippet": "Ready-to-read script for supervisor"
+}
+
+Ensure the output is ONLY valid JSON.

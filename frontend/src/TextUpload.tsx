@@ -1,63 +1,17 @@
-// --- Transcript Upload UI with Clean Styling ---
-// Supports manual paste or file-based transcript upload
-
 import React, { useState } from 'react';
 import './App.css';
 
 function TextUpload() {
+  const [inputText, setInputText] = useState('');
   const [transcript, setTranscript] = useState('');
   const [insights, setInsights] = useState('');
-  const [inputText, setInputText] = useState('');
+  const [structuredInsights, setStructuredInsights] = useState<any>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Format insights: label on top line, bolded answer below
-  const formatInsights = (text: string) => {
-    const lines = text
-      .replace(/[\u{1F300}-\u{1F6FF}]/gu, '') // strip emojis
-      .split('\n')
-      .map((line) => {
-        const match = line.match(/^(\d+\..*?):\s*(.*)$/);
-        if (match) {
-          return `<div style="margin-bottom: 1rem;">${match[1]}:<br/><strong>${match[2]}</strong></div>`;
-        }
-        return `<div style="margin-bottom: 1rem;">${line}</div>`;
-      });
-    return lines.join('');
-  };
-
-  // Format transcript: bold speaker names
-  const formatTranscript = (text: string) => {
-    return text
-      .split('\n')
-      .map((line) => {
-	const match = line.match(/^\s*(Agent|Customer):\s*(.*)$/i);
-        if (match) {
-          return `<div style="margin-bottom: 0.75rem;"><strong>${match[1]}:</strong> ${match[2]}</div>`;
-        }
-        return `<div style="margin-bottom: 0.75rem;">${line}</div>`;
-      })
-      .join('');
-  };
-
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInputText(e.target.value);
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      setInputText(text);
-    };
-    reader.readAsText(file);
-  };
-
   const handleSubmit = async () => {
     if (!inputText.trim()) {
-      setError('Transcript input is empty.');
+      setError('Please enter a transcript.');
       return;
     }
 
@@ -65,6 +19,7 @@ function TextUpload() {
     setError('');
     setTranscript('');
     setInsights('');
+    setStructuredInsights(null);
 
     const formData = new FormData();
     formData.append('transcript', inputText);
@@ -82,6 +37,7 @@ function TextUpload() {
       const data = await response.json();
       setTranscript(data.transcript);
       setInsights(data.insights);
+      setStructuredInsights(data.insights_structured);
     } catch (err: any) {
       setError(err.message || 'Unexpected error occurred.');
     } finally {
@@ -89,62 +45,79 @@ function TextUpload() {
     }
   };
 
-  return (
-    <div>
-      <h2 style={{ fontWeight: 600, marginBottom: '1rem' }}>
-        Upload or Paste Transcript Text
-      </h2>
+  const renderInsights = (text: string) => {
+    return text.split('\n').filter(l => l.trim()).map((line, i) => {
+      const match = line.match(/^(\d+\..*?):\s*(.*)$/);
+      if (match) {
+        return (
+          <div key={i} className="insight-item">
+            <span className="insight-label">{match[1]}</span>
+            <div className="insight-value">{match[2]}</div>
+          </div>
+        );
+      }
+      return <div key={i} className="insight-item">{line}</div>;
+    });
+  };
 
+  return (
+    <div className="upload-section">
       <textarea
-        rows={10}
-        placeholder="Paste transcript here..."
+        placeholder="Paste customer service transcript here... (e.g. Agent: Hello... Customer: Hi...)"
         value={inputText}
-        onChange={handleTextChange}
+        onChange={(e) => setInputText(e.target.value)}
       />
 
-      <div>
-        <input type="file" accept=".txt" onChange={handleFileUpload} />
-      </div>
-
-      <button onClick={handleSubmit} disabled={isLoading}>
-        {isLoading ? 'Analyzing...' : 'Analyze Transcript'}
+      <button className="primary-btn" onClick={handleSubmit} disabled={isLoading || !inputText}>
+        {isLoading && <span className="loader"></span>}
+        {isLoading ? 'Analyzing Behavioral Data...' : 'Analyze Transcript'}
       </button>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <div className="error-msg">{error}</div>}
 
-      {insights && (
-        <div>
-          <h3>Insights</h3>
-          <div
-            style={{
-              whiteSpace: 'pre-wrap',
-              fontFamily: 'Inter, sans-serif',
-              lineHeight: '1.6',
-              fontSize: '1rem',
-              padding: '1rem',
-              backgroundColor: '#f9f9f9',
-              borderRadius: '8px',
-            }}
-            dangerouslySetInnerHTML={{ __html: formatInsights(insights) }}
-          />
-        </div>
-      )}
+      {(transcript || insights) && (
+        <div className="output-container" style={{ width: '100%', maxWidth: 'none', textAlign: 'left' }}>
+          <div className="panel">
+            <h3 className="panel-title">Processed Transcript</h3>
+            <div className="content-box">
+              {transcript.split('\n').map((line, i) => (
+                <div key={i} style={{ marginBottom: '0.5rem' }}>
+                  {line.startsWith('Agent:') || line.startsWith('Customer:') ? (
+                    <>
+                      <strong style={{ color: 'var(--accent-cyan)' }}>{line.split(':')[0]}:</strong>
+                      {line.split(':').slice(1).join(':')}
+                    </>
+                  ) : line}
+                </div>
+              ))}
+            </div>
 
-      {transcript && (
-        <div>
-          <h3>Transcript</h3>
-          <div
-            style={{
-              whiteSpace: 'pre-wrap',
-              fontFamily: 'Inter, sans-serif',
-              lineHeight: '1.6',
-              fontSize: '1rem',
-              padding: '1rem',
-              backgroundColor: '#f9f9f9',
-              borderRadius: '8px',
-            }}
-            dangerouslySetInnerHTML={{ __html: formatTranscript(transcript) }}
-          />
+            {structuredInsights && (
+                <div className="panel" style={{ marginTop: '1rem', border: 'none', background: 'transparent', padding: 0 }}>
+                  <h3 className="panel-title">Predictive Metrics</h3>
+                  <div className="content-box" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div className="insight-item">
+                      <span className="insight-label">Sentiment</span>
+                      <div className={`insight-value ${structuredInsights.sentiment === 'Negative' ? 'error-text' : ''}`} style={{ fontSize: '1.2rem', color: structuredInsights.sentiment === 'Positive' ? '#00f2ff' : '' }}>
+                        {structuredInsights.sentiment}
+                      </div>
+                    </div>
+                    <div className="insight-item">
+                      <span className="insight-label">Churn Risk</span>
+                      <div className="insight-value" style={{ fontSize: '1.2rem', color: structuredInsights.churn_risk_score > 70 ? '#ff4d4d' : '#2d8cf0' }}>
+                        {structuredInsights.churn_risk_score}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+          </div>
+          <div className="panel">
+            <h3 className="panel-title">Behavioral Insights</h3>
+            <div className="content-box">
+              {insights ? renderInsights(insights) : "Analysis in progress..."}
+            </div>
+          </div>
         </div>
       )}
     </div>

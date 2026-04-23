@@ -79,8 +79,6 @@ These additions close that loop.
 - This model defaults to practical suggestions like a one-month service credit or a discounted data upgrade, avoiding vague or generic outputs like “None” or “Escalate to loyalty.”  
 - It ensures that retention incentives can still be surfaced when no model output is available or integrated.
 
-—
-*[Mehmet](https://github.com/mmustafaicer), at Charter Communications, suggested exploring a Next Best Offer (NBO) system — a concept that’s not a natural fit for telecom, where there are few core products (typically bundled) and limited upsell diversity. Traditional NBO logic works best in high-SKU, frequent-interaction domains like Amazon (thousands of products, high velocity) or Netflix (rapidly rotating catalogs). Telecom, by contrast, has sparse product sets but deep behavioral data. This implementation reframes NBO using behavioral clustering and usage pattern analysis, aligning offer logic with customer need-states rather than product similarity — a better fit for the domain than standard e-commerce recommenders.*
 
 ---
 

@@ -9,6 +9,9 @@ import whisper
 import uvicorn
 import os
 from dotenv import load_dotenv
+import uuid
+import json
+from backend.database import init_db, save_call, get_connection
 
 # --- Load OpenAI API key from .env so we never hardcode secrets ---
 load_dotenv()
@@ -17,6 +20,11 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # --- initialize FastAPI app ---
 # this powers the backend server for both upload + insight APIs
 app = FastAPI()
+
+# --- initialize database on startup ---
+@app.on_event("startup")
+async def startup_event():
+    init_db()
 
 # --- enable CORS (important for local frontend testing) ---
 # this allows React or Streamlit UIs to make requests to the backend
@@ -45,26 +53,137 @@ async def analyze_audio(file: UploadFile = File(...)):
     result = whisper_model.transcribe(tmp_path)
     transcript = result["text"]
 
-    # feed the transcript to GPT to extract intent, tone, churn risk, etc.
-    from backend.gpt_analysis import analyze_transcript  # deferred import to avoid circular
-    insights = analyze_transcript(transcript)
+    # Redact PII using local spaCy and Presidio
+    from backend.pii_redaction import detect_and_redact
+    redaction_result = detect_and_redact(transcript)
+    clean_transcript = redaction_result["redacted_text"]
 
-    # return both the raw transcript and structured output
+    # feed the clean transcript to local LLM to extract intent, tone, churn risk, etc.
+    from backend.gpt_analysis import analyze_transcript, analyze_transcript_structured
+    insights_text = analyze_transcript(clean_transcript)
+    insights_json = analyze_transcript_structured(clean_transcript)
+
+    # Generate a unique call ID
+    call_id = str(uuid.uuid4())
+
+    # Save to DuckDB for post-call analytics
+    save_call(
+        call_id=call_id,
+        transcript=transcript,
+        clean_transcript=clean_transcript,
+        pii_detected=redaction_result["pii_detected"],
+        insights=json.dumps(insights_json)  # store the structured JSON
+    )
+
+    # return raw transcript, clean transcript, detected PII, and insights
     return {
+        "call_id": call_id,
         "transcript": transcript,
-        "insights": insights
+        "clean_transcript": clean_transcript,
+        "pii_detected": redaction_result["pii_detected"],
+        "insights": insights_text,
+        "insights_structured": insights_json
     }
 
 # --- POST route for raw transcript text upload ---
 # useful for testing manually or using pre-existing call logs
 @app.post("/analyze-text")
 async def analyze_text_input(transcript: str = Form(...)):
-    from backend.gpt_analysis import analyze_transcript
-    insights = analyze_transcript(transcript)
+    from backend.pii_redaction import detect_and_redact
+    redaction_result = detect_and_redact(transcript)
+    clean_transcript = redaction_result["redacted_text"]
+
+    from backend.gpt_analysis import analyze_transcript, analyze_transcript_structured
+    insights_text = analyze_transcript(clean_transcript)
+    insights_json = analyze_transcript_structured(clean_transcript)
+    
+    # Generate a unique call ID
+    call_id = str(uuid.uuid4())
+
+    # Save to DuckDB for post-call analytics
+    save_call(
+        call_id=call_id,
+        transcript=transcript,
+        clean_transcript=clean_transcript,
+        pii_detected=redaction_result["pii_detected"],
+        insights=json.dumps(insights_json)
+    )
+    
     return {
+        "call_id": call_id,
         "transcript": transcript,
-        "insights": insights
+        "clean_transcript": clean_transcript,
+        "pii_detected": redaction_result["pii_detected"],
+        "insights": insights_text,
+        "insights_structured": insights_json
     }
+
+# --- GET route to retrieve call history ---
+@app.get("/history")
+async def get_history():
+    con = get_connection()
+    try:
+        # Query calls sorted by most recent
+        results = con.execute("SELECT id, transcript, clean_transcript, pii_detected, insights, created_at FROM calls ORDER BY created_at DESC").fetchall()
+        
+        history = []
+        for row in results:
+            history.append({
+                "call_id": row[0],
+                "transcript": row[1],
+                "clean_transcript": row[2],
+                "pii_detected": json.loads(row[3]) if isinstance(row[3], str) else row[3],
+                "insights": row[4],
+                "created_at": row[5].isoformat() if row[5] else None
+            })
+        return history
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        con.close()
+
+# --- GET route for historical analytics charts ---
+@app.get("/analytics")
+async def get_analytics():
+    con = get_connection()
+    try:
+        # Get sentiment distribution
+        sentiment_data = con.execute("""
+            SELECT 
+                json_extract(insights, '$.sentiment') as sentiment,
+                count(*) as count
+            FROM calls
+            GROUP BY sentiment
+        """).fetchall()
+
+        # Get churn risk average over time
+        churn_trend = con.execute("""
+            SELECT 
+                strftime('%Y-%m-%d %H:%M', created_at) as time,
+                avg(CAST(json_extract(insights, '$.churn_risk_score') AS FLOAT)) as avg_risk
+            FROM calls
+            GROUP BY time
+            ORDER BY time ASC
+        """).fetchall()
+
+        # Get issue classification distribution
+        issue_dist = con.execute("""
+            SELECT 
+                json_extract(insights, '$.classification') as category,
+                count(*) as count
+            FROM calls
+            GROUP BY category
+        """).fetchall()
+
+        return {
+            "sentiment_dist": [{"name": r[0], "value": r[1]} for r in sentiment_data if r[0]],
+            "churn_trend": [{"time": r[0], "risk": r[1]} for r in churn_trend if r[0]],
+            "issue_dist": [{"name": r[0], "value": r[1]} for r in issue_dist if r[0]]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        con.close()
 
 # --- GET healthcheck route for testing ---
 @app.get("/ping")
