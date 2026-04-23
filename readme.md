@@ -330,4 +330,4 @@ const response = await fetch('http://localhost:8001/analyze-text', {
 
 ## 📝 License
 
-MIT © 2025
+TA © 2025
